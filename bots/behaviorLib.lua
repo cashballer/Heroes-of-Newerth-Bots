@@ -2390,6 +2390,8 @@ function behaviorLib.PositionSelfExecute(botBrain)
 		bDebugEchos = true
 	end --]]
 	
+	behaviorLib.ShopWithCourier(botBrain)
+	
 	local nCurrentTimeMS = HoN.GetGameTime()
 	local unitSelf = core.unitSelf
 	local vecMyPosition = unitSelf:GetPosition()
@@ -3692,3 +3694,73 @@ behaviorLib.PickRuneBehavior["Utility"] = behaviorLib.PickRuneUtility
 behaviorLib.PickRuneBehavior["Execute"] = behaviorLib.PickRuneExecute
 behaviorLib.PickRuneBehavior["Name"] = "Pick Rune"
 tinsert(behaviorLib.tBehaviors, behaviorLib.PickRuneBehavior)
+
+function behaviorLib.SlotOpen(inventory)
+	for slot = 1, 6, 1 do
+		curItem = inventory[slot]
+		if curItem == nil then
+			return true
+		end
+	end
+	return false
+end
+
+function behaviorLib.ItemInStash(inventory)
+	for slot = 7, 12, 1 do
+		curItem = inventory[slot]
+		if curItem ~= nil then
+			BotEcho(HoN.GetGameTime().." - "..curItem:GetTypeName().." in stash (slot "..slot..")")
+			return true
+		end
+	end
+	return false
+end
+
+behaviorLib.nNextCourierTime = 120000
+behaviorLib.nNextCourierInterval = 120000 -- 2 minutes is usually long enough for courier round trip
+behaviorLib.nNextStashCheckInterval = 5000
+behaviorLib.nNextStashCheckTime = behaviorLib.nNextCourierTime + behaviorLib.nNextStashCheckInterval
+function behaviorLib.ShopWithCourier(botBrain)
+	
+	-- Throttle stash checks
+	if behaviorLib.nNextStashCheckTime > HoN.GetGameTime() then
+		return false
+	end
+	behaviorLib.nNextStashCheckTime = HoN.GetGameTime() + behaviorLib.nNextStashCheckInterval
+	
+	local unitSelf = core.unitSelf
+	local tInventory = unitSelf:GetInventory(true)
+	
+	if behaviorLib.ItemInStash(tInventory) then
+		local abilCourier = unitSelf:GetAbility(12) -- automate courier
+		if abilCourier:CanActivate() and abilCourier:GetActiveModifierKey() ~= "automated_courier_cancel" then
+			BotEcho(HoN.GetGameTime().." - ".."Sending chicken - "..abilCourier:GetActiveModifierKey())
+			return core.OrderAbility(botBrain, abilCourier)
+		end
+	end
+
+	-- Space out your buys
+	if behaviorLib.nNextCourierTime > HoN.GetGameTime() then
+		return false
+	end
+	behaviorLib.nNextCourierTime = HoN.GetGameTime() + behaviorLib.nNextCourierInterval
+
+	--Determine where in the pattern we are (mostly for reloads)
+	if behaviorLib.buyState == behaviorLib.BuyStateUnknown then
+		behaviorLib.DetermineBuyState(botBrain)
+	end
+	
+	local nextItemDef = behaviorLib.DetermineNextItemDef(botBrain)
+
+	if nextItemDef ~= nil then
+	
+		if behaviorLib.SlotOpen(tInventory) and nextItemDef ~= nil and botBrain:GetGold() > unitSelf:GetItemCostRemaining(nextItemDef) then
+			BotEcho(HoN.GetGameTime().." - ".."Buying "..nextItemDef:GetDisplayName())
+			return unitSelf:PurchaseRemaining(nextItemDef)
+		end
+		
+		-- behaviorLib.addItemBehavior(nextItemDef:GetName())
+	end
+	
+	return false	
+end
